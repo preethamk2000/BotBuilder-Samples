@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
+//extern alias BetaLib;
 
 using System;
 using System.Collections.Generic;
@@ -16,63 +17,188 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Microsoft.BotBuilderSamples.Helpers;
 using Microsoft.BotBuilderSamples.Models;
+using TeamsMessagingExtensionsAction.Model;
+using Microsoft.Graph;
+using Azure.Identity;
+using Microsoft.Identity.Client;
+using System.Text;
+//using Beta = BetaLib.Microsoft.Graph.Beta;
+//using MSGraphBeta = Microsoft.Graph.Beta;
 
 namespace Microsoft.BotBuilderSamples.Bots
 {
     public class TeamsMessagingExtensionsActionBot : TeamsActivityHandler
     {
         public readonly string baseUrl;
+        public readonly string clientID;
+        public readonly string clientSecret;
+        public readonly string graphAPIToken;
 
         public TeamsMessagingExtensionsActionBot(IConfiguration configuration) : base()
         {
             this.baseUrl = configuration["BaseUrl"];
+            this.clientID = configuration["MicrosoftAppId"];
+            this.clientSecret = configuration["MicrosoftAppPassword"];
+            this.graphAPIToken = configuration["GraphAPIToken"];
         }
 
         protected override async Task<MessagingExtensionActionResponse> OnTeamsMessagingExtensionSubmitActionAsync(ITurnContext<IInvokeActivity> turnContext, MessagingExtensionAction action, CancellationToken cancellationToken)
         {
-            switch (action.CommandId)
-            {
-                case "createCard":
-                    return CreateCardCommand(turnContext, action);
-                case "shareMessage":
-                    return ShareMessageCommand(turnContext, action);
-                case "webView":
-                    return WebViewResponse(turnContext, action);
-                case "createAdaptiveCard":
-                    return CreateAdaptiveCardResponse(turnContext, action);
-                case "razorView":
-                    return RazorViewResponse(turnContext, action);
-            }
-            return new MessagingExtensionActionResponse();
+           switch (action.CommandId)
+           {
+               case "scheduleMessage":
+                   return ScheduleMessageLater(turnContext, action, cancellationToken);
+               //case "shareMessage":
+               //    return ShareMessageCommand(turnContext, action);
+               //case "webView":
+               //    return WebViewResponse(turnContext, action);
+               //case "createAdaptiveCard":
+               //    return CreateAdaptiveCardResponse(turnContext, action);
+               //case "razorView":
+               //    return RazorViewResponse(turnContext, action);
+           }
+           return new MessagingExtensionActionResponse();
         }
 
-        private MessagingExtensionActionResponse RazorViewResponse(ITurnContext<IInvokeActivity> turnContext, MessagingExtensionAction action)
+        private async Task SendScheduledMessageResponse(ITurnContext<IInvokeActivity> turnContext, CancellationToken cancellationToken, string replyText)
         {
-            // The user has chosen to create a card by choosing the 'Create Card' context menu command.
-            RazorViewResponse cardData = JsonConvert.DeserializeObject<RazorViewResponse>(action.Data.ToString());
-            var card = new HeroCard
+            //var activity = GetCardForNewReminder(outputString);
+            // Echo back what the user said
+            await turnContext.SendActivityAsync(MessageFactory.Text(replyText), cancellationToken);
+        }
+
+        private MessagingExtensionActionResponse ScheduleMessageLater(ITurnContext<IInvokeActivity> turnContext, MessagingExtensionAction action, CancellationToken cancellationToken)
+        {
+           // The user has chosen to create a card by choosing the 'Create Card' context menu command.
+           var scheduleMessageData = ((JObject)action.Data).ToObject<ScheduleMessageResponse>();
+
+           var chatId = GetChatIDFromAlias(scheduleMessageData.Recipient);
+           var replyText = $"Message: {scheduleMessageData.Message} | Scheduled at: <> | To: {scheduleMessageData.Recipient}";
+
+           var response = GetCardForResponse(replyText);
+
+           SendScheduledMessageResponse(turnContext, cancellationToken, replyText);
+
+
+           var card = new HeroCard
+           {
+              Title = "Scheduled Message Details",
+              Subtitle = $"To: {scheduleMessageData.Recipient}",
+              Text = scheduleMessageData.Message,
+           };
+
+           var attachments = new List<MessagingExtensionAttachment>();
+           attachments.Add(new MessagingExtensionAttachment
+           {
+              Content = card,
+              ContentType = HeroCard.ContentType,
+              Preview = card.ToAttachment(),
+           });
+
+           return new MessagingExtensionActionResponse
+           {
+              ComposeExtension = new MessagingExtensionResult
+              {
+                  AttachmentLayout = "list",
+                  Type = "result",
+                  Attachments = attachments,
+              },
+           };
+
+           return new MessagingExtensionActionResponse();
+        }
+
+        private GraphServiceClient GetGraphClient()
+        {
+            var scopes = new[] { "User.Read", "Chat.ReadBasic", "ChatMember.Read", "ChatMessage.Send" };
+
+            // Multi-tenant apps can use "common",
+            // single-tenant apps must use the tenant ID from the Azure portal
+            var tenantId = "common";
+
+            //// Values from app registration
+            var clientId = this.clientID;
+            var clientSecret = "YOUR_CLIENT_SECRET";
+
+            var options = new TokenCredentialOptions
             {
-                Title = "Requested User: " + turnContext.Activity.From.Name,
-                Text = cardData.DisplayData,
+               AuthorityHost = AzureAuthorityHosts.AzurePublicCloud
             };
 
-            var attachments = new List<MessagingExtensionAttachment>();
-            attachments.Add(new MessagingExtensionAttachment
-            {
-                Content = card,
-                ContentType = HeroCard.ContentType,
-                Preview = card.ToAttachment(),
+            // This is the incoming token to exchange using on-behalf-of flow
+            var oboToken = "JWT_TOKEN_TO_EXCHANGE";
+
+            var cca = ConfidentialClientApplicationBuilder
+               .Create(this.clientID)
+               .WithTenantId(tenantId)
+               .WithClientSecret(this.clientSecret)
+               .Build();
+
+            // DelegateAuthenticationProvider is a simple auth provider implementation
+            // that allows you to define an async function to retrieve a token
+            // Alternatively, you can create a class that implements IAuthenticationProvider
+            // for more complex scenarios
+            var authProvider = new DelegateAuthenticationProvider(async (request) => {
+               // Use Microsoft.Identity.Client to retrieve token
+               var assertion = new UserAssertion(oboToken);
+               var result = await cca.AcquireTokenOnBehalfOf(scopes, assertion).ExecuteAsync();
+
+               request.Headers.Authorization =
+                   new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", result.AccessToken);
             });
 
-            return new MessagingExtensionActionResponse
+            var scopes = new[] { "https://graph.microsoft.com/Chat.ReadBasic.All", "https://graph.microsoft.com/Chat.ReadWrite.All", "https://graph.microsoft.com/ChatMember.Read.All", "https://graph.microsoft.com/User.Read" };
+
+            // Multi-tenant apps can use "common",
+            // single-tenant apps must use the tenant ID from the Azure portal
+            var tenantId = "common";
+
+
+            var options = new TokenCredentialOptions
             {
-                ComposeExtension = new MessagingExtensionResult
-                {
-                    AttachmentLayout = "list",
-                    Type = "result",
-                    Attachments = attachments,
-                },
+                AuthorityHost = AzureAuthorityHosts.AzurePublicCloud
             };
+
+            // https://docs.microsoft.com/dotnet/api/azure.identity.clientsecretcredential
+            var clientSecretCredential = new ClientSecretCredential(
+                tenantId, this.clientID, this.clientSecret, options);
+
+            var graphClient = new GraphServiceClient(clientSecretCredential, scopes);
+
+            //var graphClient = new GraphServiceClient(authProvider);
+            return graphClient;
+        }
+
+        private async Task<string> GetChatIDFromAlias(string recipient)
+        {
+            var client = GetGraphClient();
+            var chats = await client.Me.Chats.Request().GetAsync();
+
+            //foreach (var chat in chats)
+            //{
+            //    var chatID = chat.Id;
+
+            //    var members = await client.Chats[chatID].Members
+            //                        .Request()
+            //                        .GetAsync();
+
+
+            //}
+            return chats.ToString();
+        }
+
+        protected IMessageActivity GetCardForResponse(String message, string alias, string dateTimeString)
+        {
+
+            var card = new HeroCard();
+
+            card.Title = "Scheduled Message Details";
+            card.Subtitle = $"To: {alias}, At: {dateTimeString}";
+            card.Text = $"Message: {message}";
+
+            var activity = MessageFactory.Attachment(card.ToAttachment());
+            return activity;
+
         }
 
         private MessagingExtensionActionResponse CreateCardCommand(ITurnContext<IInvokeActivity> turnContext, MessagingExtensionAction action)
@@ -200,63 +326,6 @@ namespace Microsoft.BotBuilderSamples.Bots
             };
         }
 
-        protected override async Task<MessagingExtensionActionResponse> OnTeamsMessagingExtensionFetchTaskAsync(ITurnContext<IInvokeActivity> turnContext, MessagingExtensionAction action, CancellationToken cancellationToken)
-        {
-            switch (action.CommandId)
-            {
-                case "webView":
-                    return EmpDetails(turnContext, action);
-                case "HTML":
-                    return TaskModuleHTMLPage(turnContext, action);
-                case "razorView":
-                    return DateDayInfo(turnContext, action);
-                default:
-                    // we are handling two cases within try/catch block 
-                    //if the bot is installed it will create adaptive card attachment and show card with input fields
-                    string memberName;
-                    try
-                    {
-                        // Check if your app is installed by fetching member information.
-                        var member = await TeamsInfo.GetMemberAsync(turnContext, turnContext.Activity.From.Id, cancellationToken);
-                        memberName = member.Name;
-                    }
-                    catch (ErrorResponseException ex)
-                    {
-                        if (ex.Body.Error.Code == "BotNotInConversationRoster")
-                        {
-                            return new MessagingExtensionActionResponse
-                            {
-                                Task = new TaskModuleContinueResponse
-                                {
-                                    Value = new TaskModuleTaskInfo
-                                    {
-                                        Card = GetAdaptiveCardAttachmentFromFile("justintimeinstallation.json"),
-                                        Height = 200,
-                                        Width = 400,
-                                        Title = "Adaptive Card - App Installation",
-                                    },
-                                },
-                            };
-                        }
-                        throw; // It's a different error.
-                    }
-
-                    return new MessagingExtensionActionResponse
-                    {
-                        Task = new TaskModuleContinueResponse
-                        {
-                            Value = new TaskModuleTaskInfo
-                            {
-                                Card = GetAdaptiveCardAttachmentFromFile("adaptiveCard.json"),
-                                Height = 200,
-                                Width = 400,
-                                Title = $"Welcome {memberName}",
-                            },
-                        },
-                    };
-            }
-        }
-
         private MessagingExtensionActionResponse DateDayInfo(ITurnContext<IInvokeActivity> turnContext, MessagingExtensionAction action)
         {
             var response = new MessagingExtensionActionResponse()
@@ -309,20 +378,6 @@ namespace Microsoft.BotBuilderSamples.Bots
                 },
             };
             return response;
-        }
-
-        private static Attachment GetAdaptiveCardAttachmentFromFile(string fileName)
-        {
-            //Read the card json and create attachment.
-            string[] paths = { ".", "Resources", fileName };
-            var adaptiveCardJson = File.ReadAllText(Path.Combine(paths));
-
-            var adaptiveCardAttachment = new Attachment()
-            {
-                ContentType = "application/vnd.microsoft.card.adaptive",
-                Content = JsonConvert.DeserializeObject(adaptiveCardJson),
-            };
-            return adaptiveCardAttachment;
         }
     }
 }
