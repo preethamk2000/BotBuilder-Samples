@@ -42,149 +42,150 @@ namespace Microsoft.BotBuilderSamples.Bots
             this.graphAPIToken = configuration["GraphAPIToken"];
         }
 
-        protected override async Task<MessagingExtensionActionResponse> OnTeamsMessagingExtensionSubmitActionAsync(ITurnContext<IInvokeActivity> turnContext, MessagingExtensionAction action, CancellationToken cancellationToken)
+        protected override async Task OnMessageActivityAsync(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)
         {
-           switch (action.CommandId)
-           {
-               case "scheduleMessage":
-                   return ScheduleMessageLater(turnContext, action, cancellationToken);
-               //case "shareMessage":
-               //    return ShareMessageCommand(turnContext, action);
-               //case "webView":
-               //    return WebViewResponse(turnContext, action);
-               //case "createAdaptiveCard":
-               //    return CreateAdaptiveCardResponse(turnContext, action);
-               //case "razorView":
-               //    return RazorViewResponse(turnContext, action);
-           }
-           return new MessagingExtensionActionResponse();
-        }
+            var infoText = "Please specify in this format: scheduleMessageLater AliasName [Message] [dd/MM HH:mm:ss]";
 
-        private async Task SendScheduledMessageResponse(ITurnContext<IInvokeActivity> turnContext, CancellationToken cancellationToken, string replyText)
-        {
-            //var activity = GetCardForNewReminder(outputString);
-            // Echo back what the user said
-            await turnContext.SendActivityAsync(MessageFactory.Text(replyText), cancellationToken);
-        }
-
-        private MessagingExtensionActionResponse ScheduleMessageLater(ITurnContext<IInvokeActivity> turnContext, MessagingExtensionAction action, CancellationToken cancellationToken)
-        {
-           // The user has chosen to create a card by choosing the 'Create Card' context menu command.
-           var scheduleMessageData = ((JObject)action.Data).ToObject<ScheduleMessageResponse>();
-
-           var chatId = GetChatIDFromAlias(scheduleMessageData.Recipient);
-           var replyText = $"Message: {scheduleMessageData.Message} | Scheduled at: <> | To: {scheduleMessageData.Recipient}";
-
-           var response = GetCardForResponse(replyText);
-
-           SendScheduledMessageResponse(turnContext, cancellationToken, replyText);
-
-
-           var card = new HeroCard
-           {
-              Title = "Scheduled Message Details",
-              Subtitle = $"To: {scheduleMessageData.Recipient}",
-              Text = scheduleMessageData.Message,
-           };
-
-           var attachments = new List<MessagingExtensionAttachment>();
-           attachments.Add(new MessagingExtensionAttachment
-           {
-              Content = card,
-              ContentType = HeroCard.ContentType,
-              Preview = card.ToAttachment(),
-           });
-
-           return new MessagingExtensionActionResponse
-           {
-              ComposeExtension = new MessagingExtensionResult
-              {
-                  AttachmentLayout = "list",
-                  Type = "result",
-                  Attachments = attachments,
-              },
-           };
-
-           return new MessagingExtensionActionResponse();
-        }
-
-        private GraphServiceClient GetGraphClient()
-        {
-            var scopes = new[] { "User.Read", "Chat.ReadBasic", "ChatMember.Read", "ChatMessage.Send" };
-
-            // Multi-tenant apps can use "common",
-            // single-tenant apps must use the tenant ID from the Azure portal
-            var tenantId = "common";
-
-            //// Values from app registration
-            var clientId = this.clientID;
-            var clientSecret = "YOUR_CLIENT_SECRET";
-
-            var options = new TokenCredentialOptions
+            if (turnContext.Activity.Text != null)
             {
-               AuthorityHost = AzureAuthorityHosts.AzurePublicCloud
-            };
+                var text = turnContext.Activity.Text.Trim();
 
-            // This is the incoming token to exchange using on-behalf-of flow
-            var oboToken = "JWT_TOKEN_TO_EXCHANGE";
+                if(text.Equals("schedulemessagelater --help"))
+                    await turnContext.SendActivityAsync(MessageFactory.Text(infoText, infoText), cancellationToken);
 
-            var cca = ConfidentialClientApplicationBuilder
-               .Create(this.clientID)
-               .WithTenantId(tenantId)
-               .WithClientSecret(this.clientSecret)
-               .Build();
+                else if (text.Contains("scheduleMessageLater"))
+                    await ScheduleMessageLater(turnContext, cancellationToken, text);
+            }
 
-            // DelegateAuthenticationProvider is a simple auth provider implementation
-            // that allows you to define an async function to retrieve a token
-            // Alternatively, you can create a class that implements IAuthenticationProvider
-            // for more complex scenarios
-            var authProvider = new DelegateAuthenticationProvider(async (request) => {
-               // Use Microsoft.Identity.Client to retrieve token
-               var assertion = new UserAssertion(oboToken);
-               var result = await cca.AcquireTokenOnBehalfOf(scopes, assertion).ExecuteAsync();
-
-               request.Headers.Authorization =
-                   new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", result.AccessToken);
-            });
-
-            var scopes = new[] { "https://graph.microsoft.com/Chat.ReadBasic.All", "https://graph.microsoft.com/Chat.ReadWrite.All", "https://graph.microsoft.com/ChatMember.Read.All", "https://graph.microsoft.com/User.Read" };
-
-            // Multi-tenant apps can use "common",
-            // single-tenant apps must use the tenant ID from the Azure portal
-            var tenantId = "common";
-
-
-            var options = new TokenCredentialOptions
-            {
-                AuthorityHost = AzureAuthorityHosts.AzurePublicCloud
-            };
-
-            // https://docs.microsoft.com/dotnet/api/azure.identity.clientsecretcredential
-            var clientSecretCredential = new ClientSecretCredential(
-                tenantId, this.clientID, this.clientSecret, options);
-
-            var graphClient = new GraphServiceClient(clientSecretCredential, scopes);
-
-            //var graphClient = new GraphServiceClient(authProvider);
-            return graphClient;
         }
 
-        private async Task<string> GetChatIDFromAlias(string recipient)
+        private async Task ScheduleMessageLater(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken, string text)
         {
-            var client = GetGraphClient();
-            var chats = await client.Me.Chats.Request().GetAsync();
+            string alias = text.Split(" ")[1].ToLower();
+            string message = text.Split('[')[1].Split(']')[0];
+            string dateTimeString = text.Split('[')[2].Split(']')[0];
 
-            //foreach (var chat in chats)
-            //{
-            //    var chatID = chat.Id;
+            //var enteredString = "14/10 21:00:00";
+            DateTime myDate = DateTime.ParseExact(dateTimeString, "dd/MM HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+            myDate = TimeZoneInfo.ConvertTimeBySystemTimeZoneId(myDate, "India Standard Time", "UTC");
+            int secondsToSend = ((int)(myDate - DateTime.UtcNow).TotalSeconds);
 
-            //    var members = await client.Chats[chatID].Members
-            //                        .Request()
-            //                        .GetAsync();
+            //var replyText = $"**Message:** {message} {Environment.NewLine} **Scheduled at:** {dateTimeString} {Environment.NewLine} **To:** {alias}";
+            //await turnContext.SendActivityAsync(MessageFactory.Text(replyText, replyText), cancellationToken);
+            var responseCard = GetCardForResponse(message, alias, dateTimeString);
+            await turnContext.SendActivityAsync(responseCard, cancellationToken);
+
+            try
+            {
+                var chatID = GetChatIDFromAliasManual(alias);
+                Thread.Sleep(secondsToSend * 1000);
+                dynamic response = SendMessageWithChatID(message, chatID);
+                Console.WriteLine(response.body.content);
+                await turnContext.SendActivityAsync(MessageFactory.Text($"Message to {alias} has been sent!"), cancellationToken);
+            }
+            catch
+            {
+                await turnContext.SendActivityAsync(MessageFactory.Text($"Failed to send the message to {alias}."), cancellationToken);
+            }
+
+            //await turnContext.SendActivityAsync(MessageFactory.Text(chatID), cancellationToken);
 
 
-            //}
-            return chats.ToString();
+        }
+
+        private object GetObjectFromGraphAPI(string url)
+        {
+            dynamic response = null;
+            try
+            {
+                var webRequest = System.Net.WebRequest.Create(url);
+                if (webRequest != null)
+                {
+                    webRequest.Method = "GET";
+                    webRequest.Timeout = 15000;
+                    webRequest.ContentType = "application/json";
+                    webRequest.Headers.Add("Authorization", $"Bearer {this.graphAPIToken}");
+
+                    using (System.IO.Stream s = webRequest.GetResponse().GetResponseStream())
+                    {
+                        using (System.IO.StreamReader sr = new System.IO.StreamReader(s))
+                        {
+                            var jsonResponse = sr.ReadToEnd();
+                            response = JsonConvert.DeserializeObject(jsonResponse);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
+            }
+
+            return response;
+        }
+
+        private string GetChatIDFromAliasManual(string alias)
+        {
+            string WEBSERVICE_URL = "https://graph.microsoft.com/beta/me/chats/";
+            dynamic response = GetObjectFromGraphAPI(WEBSERVICE_URL);
+            string chatID = null;
+            //Console.WriteLine(String.Format("Response: {0}", response));
+            //Console.WriteLine(response["@odata.count"]);
+            foreach (var chat in response.value)
+            {
+                if (chat.chatType == "oneOnOne")
+                {
+                    string url = $"https://graph.microsoft.com/beta/chats/{chat.id}/members";
+                    dynamic chatInfo = GetObjectFromGraphAPI(url);
+                    if (Int32.Parse(chatInfo["@odata.count"].ToString()) == 2 && (chatInfo.value[1].email.ToString().Split("@")[0].ToLower() == alias || chatInfo.value[0].email.ToString().Split("@")[0].ToLower() == alias) )
+                    {
+                        //Console.WriteLine(chat.id);
+                        chatID = chat.id.ToString();
+                        break;
+                    }
+                }
+            }
+
+            return chatID;
+        }
+
+        private object SendMessageWithChatID(string message, string chatID)
+        {
+            dynamic response = null;
+            try
+            {
+                var webRequest = System.Net.WebRequest.Create($"https://graph.microsoft.com/v1.0/chats/{chatID}/messages");
+                if (webRequest != null)
+                {
+                    webRequest.Method = "POST";
+                    webRequest.Timeout = 15000;
+                    webRequest.ContentType = "application/json";
+                    webRequest.Headers.Add("Authorization", $"Bearer {this.graphAPIToken}");
+
+                    string stringData = " {\"body\": {\"content\": \" " + message + " \"}  } ";
+                    var data = Encoding.Default.GetBytes(stringData); // note: choose appropriate encoding
+                    webRequest.ContentLength = data.Length;
+
+                    var newStream = webRequest.GetRequestStream(); // get a ref to the request body so it can be modified
+                    newStream.Write(data, 0, data.Length);
+                    newStream.Close();
+
+                    using (System.IO.Stream s = webRequest.GetResponse().GetResponseStream())
+                    {
+                        using (System.IO.StreamReader sr = new System.IO.StreamReader(s))
+                        {
+                            var jsonResponse = sr.ReadToEnd();
+                            response = JsonConvert.DeserializeObject(jsonResponse);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
+            }
+
+            return response;
         }
 
         protected IMessageActivity GetCardForResponse(String message, string alias, string dateTimeString)
