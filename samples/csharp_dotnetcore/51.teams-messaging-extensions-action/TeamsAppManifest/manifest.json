@@ -1,8 +1,8 @@
 {
-  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.5/MicrosoftTeams.schema.json",
-  "manifestVersion": "1.5",
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.11/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.11",
   "version": "1.0",
-  "id": "<<YOUR-MICROSOFT-APP-ID>>",
+  "id": "<>",
   "packageName": "com.microsoft.teams.samples",
   "developer": {
     "name": "Microsoft",
@@ -10,144 +10,95 @@
     "privacyUrl": "https://privacy.microsoft.com",
     "termsOfUseUrl": "https://www.microsoft.com/en-us/legal/intellectualproperty/copyright/default.aspx"
   },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
   "name": {
-    "short": "Action Messaging Extension",
+    "short": "Schedule Message",
     "full": "Microsoft Teams Action Based Messaging Extension"
   },
   "description": {
     "short": "Sample demonstrating an Action Based Messaging Extension",
     "full": "Sample Action Messaging Extension built with the Bot Builder SDK"
   },
-  "icons": {
-    "outline": "icon-outline.png",
-    "color": "icon-color.png"
-  },
   "accentColor": "#FFFFFF",
+  "staticTabs": [
+    {
+      "entityId": "conversations",
+      "scopes": [
+        "personal"
+      ]
+    },
+    {
+      "entityId": "about",
+      "scopes": [
+        "personal"
+      ]
+    }
+  ],
   "bots": [
     {
-      "botId": "<<YOUR-MICROSOFT-APP-ID>>",
-      "needsChannelSelector": false,
-      "isNotificationOnly": false,
+      "botId": "",
       "scopes": [
         "team",
         "personal",
         "groupchat"
-      ]
+      ],
+      "commandLists": [
+        {
+          "commands": [
+            {
+              "title": "scheduleMessageLater",
+              "description": "Send a message at a later time to someone"
+            }
+          ],
+          "scopes": ["personal"]
+        }
+      ],
+      "supportsFiles": false,
+      "isNotificationOnly": false
     }
   ],
   "composeExtensions": [
     {
-      "botId": "<<YOUR-MICROSOFT-APP-ID>>",
+      "botId": "",
+      "canUpdateConfiguration": false,
       "commands": [
         {
-          "id": "createCard",
+          "id": "scheduleMessage",
           "type": "action",
-          "context": [ "compose" ],
-          "description": "Command to run action to create a Card from Compose Box",
-          "title": "Create Card",
+          "title": "Schedule Message",
+          "description": "Send your message at a later time",
+          "initialRun": false,
+          "fetchTask": false,
+          "context": [
+            "compose",
+            "commandBox"
+          ],
           "parameters": [
             {
-              "name": "title",
-              "title": "Card title",
-              "description": "Title for the card",
+              "name": "recipient",
+              "title": "Recipient Alias",
+              "description": "",
               "inputType": "text"
             },
             {
-              "name": "subTitle",
-              "title": "Subtitle",
-              "description": "Subtitle for the card",
+              "name": "message",
+              "title": "Message Text",
+              "description": "",
               "inputType": "text"
-            },
-            {
-              "name": "text",
-              "title": "Text",
-              "description": "Text for the card",
-              "inputType": "textarea"
             }
           ]
-        },
-        {
-          "id": "shareMessage",
-          "type": "action",
-          "context": [ "message" ],
-          "description": "Test command to run action on message context (message sharing)",
-          "title": "Share Message",
-          "parameters": [
-            {
-              "name": "includeImage",
-              "title": "Include Image",
-              "description": "Include image in Hero Card",
-              "inputType": "toggle"
-            }
-          ]
-        },
-        {
-          "id": "FetchRoster",
-          "description": "Fetch the conversation roster",
-          "title": "FetchRoster",
-          "type": "action",
-          "fetchTask": true,
-          "context": [ "compose" ]
-        },
-        {
-          "id": "createAdaptiveCard",
-          "type": "action",
-          "context": [ "compose" ],
-          "description": "Command to run action to create a Card from Compose Box",
-          "title": "Adaptive Card",
-          "parameters": [
-            {
-              "name": "title",
-              "title": "Name",
-              "description": "Name of the User",
-              "inputType": "text"
-            },
-            {
-              "name": "subTitle",
-              "title": "Designation",
-              "description": "Designation of the User",
-              "inputType": "text"
-            },
-            {
-              "name": "text",
-              "title": "Description",
-              "description": "Description",
-              "inputType": "textarea"
-            }
-          ]
-        },
-        {
-          "id": "webView",
-          "description": "Fetch the Web View",
-          "title": "Web View",
-          "type": "action",
-          "fetchTask": true,
-          "context": [ "compose" ]
-        },
-        {
-          "id": "HTML",
-          "description": "Fetch the HTML",
-          "title": "HTML",
-          "type": "action",
-          "fetchTask": true,
-          "context": [ "compose" ]
-        },
-        {
-          "id": "razorView",
-          "description": "Fetch the Razor View",
-          "title": "Razor View",
-          "type": "action",
-          "fetchTask": true,
-          "context": [ "compose" ]
         }
-
       ]
     }
   ],
   "permissions": [
-    "identity"
+    "identity",
+    "messageTeamMembers"
   ],
   "validDomains": [
-    "<<Base_Url>>"
+    "6a45-59-93-226-255.ngrok.io"
   ]
 }

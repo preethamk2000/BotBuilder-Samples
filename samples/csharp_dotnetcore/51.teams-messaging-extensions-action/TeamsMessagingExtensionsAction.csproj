@@ -9,6 +9,8 @@
     <PackageReference Include="AdaptiveCards" Version="2.5.1" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="3.1.1" />
     <PackageReference Include="Microsoft.Bot.Builder.Integration.AspNet.Core" Version="4.14.1" />
+    <PackageReference Include="Microsoft.Graph.Beta" Version="4.16.0-preview" />
+    <PackageReference Include="Microsoft.Identity.Web.MicrosoftGraphBeta" Version="1.18.0" />
   </ItemGroup>
 
   <ItemGroup>
